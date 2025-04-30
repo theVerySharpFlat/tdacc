@@ -175,11 +175,6 @@ int main(int argc, char **argv) {
     int nHops = std::stoi(argv[3]);
     int capacity = std::stoi(argv[4]);
 
-    std::cout << "jump range: " << maxJump << std::endl;
-    std::cout << "jumps: " << nJumps << std::endl;
-    std::cout << "hops: " << nHops << std::endl;
-    std::cout << "capacity: " << capacity << std::endl;
-
     MPI_Init(&argc, &argv);
     int worldSize;
     MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
@@ -187,43 +182,107 @@ int main(int argc, char **argv) {
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    TDB tdb("data/TradeDangerous.db");
+    if (rank == 0) {
+        std::cout << "jump range: " << maxJump << std::endl;
+        std::cout << "jumps: " << nJumps << std::endl;
+        std::cout << "hops: " << nHops << std::endl;
+        std::cout << "capacity: " << capacity << std::endl;
+    }
+
     // std::vector<System> systems = tdb.loadSystems();
     MarketInfo marketInfo;
-    if (tdb.loadMarketInfo(&marketInfo)) {
-        exit(EXIT_FAILURE);
+
+    if (rank == 0) {
+        TDB tdb("data/TradeDangerous.db");
+        if (tdb.loadMarketInfo(&marketInfo)) {
+            exit(EXIT_FAILURE);
+        }
     }
 
-    std::cout << "system count: " << marketInfo.systems.size() << std::endl;
-    std::cout << "station count: " << marketInfo.stations.size() << std::endl;
-    std::cout << "listing count: " << marketInfo.listings.size() << std::endl;
+    if (worldSize > 1) {
+        int stationsLen = marketInfo.stations.size();
+        int systemsLen = marketInfo.systems.size();
+        int listingsLen = marketInfo.listings.size();
+
+        MPI_Bcast(&stationsLen, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Bcast(&systemsLen, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Bcast(&listingsLen, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+        if (rank != 0) {
+            marketInfo.stations.resize(stationsLen);
+            marketInfo.systems.resize(systemsLen);
+            marketInfo.listings.resize(listingsLen);
+        }
+
+        MPI_Bcast(marketInfo.stations.data(),
+                  marketInfo.stations.size() * sizeof(Station), MPI_BYTE, 0,
+                  MPI_COMM_WORLD);
+        MPI_Bcast(marketInfo.systems.data(),
+                  marketInfo.systems.size() * sizeof(System), MPI_BYTE, 0,
+                  MPI_COMM_WORLD);
+        MPI_Bcast(marketInfo.listings.data(),
+                  marketInfo.listings.size() * sizeof(ItemPricing), MPI_BYTE, 0,
+                  MPI_COMM_WORLD);
+    }
+
+    if (rank == 0) {
+        std::cout << "system count: " << marketInfo.systems.size() << std::endl;
+        std::cout << "station count: " << marketInfo.stations.size()
+                  << std::endl;
+        std::cout << "listing count: " << marketInfo.listings.size()
+                  << std::endl;
+    }
 
     GalaxyGraph graph;
-    graph.IA.push_back(0);
+    if (rank == 0) {
+        graph.IA.push_back(0);
 
-    uint32_t nnz = 0;
-    for (int i = 0; i < marketInfo.systems.size(); i++) {
-        for (int j = 0; j < marketInfo.systems.size(); j++) {
-            if (i == j)
-                continue;
+        uint32_t nnz = 0;
+        for (int i = 0; i < marketInfo.systems.size(); i++) {
+            for (int j = 0; j < marketInfo.systems.size(); j++) {
+                if (i == j)
+                    continue;
 
-            double sqDist =
-                SQ(marketInfo.systems[i].x - marketInfo.systems[j].x) +
-                SQ(marketInfo.systems[i].y - marketInfo.systems[j].y) +
-                SQ(marketInfo.systems[i].z - marketInfo.systems[j].z);
+                double sqDist =
+                    SQ(marketInfo.systems[i].x - marketInfo.systems[j].x) +
+                    SQ(marketInfo.systems[i].y - marketInfo.systems[j].y) +
+                    SQ(marketInfo.systems[i].z - marketInfo.systems[j].z);
 
-            if (sqDist <= SQ(maxJump)) {
-                graph.A.push_back(marketInfo.systems[j]);
-                graph.JA.push_back(j);
-                nnz++;
+                if (sqDist <= SQ(maxJump)) {
+                    graph.A.push_back(marketInfo.systems[j]);
+                    graph.JA.push_back(j);
+                    nnz++;
+                }
             }
+            graph.IA.push_back(nnz);
         }
-        graph.IA.push_back(nnz);
     }
 
-    std::vector<Item> itemsMap = tdb.loadItemTypes();
+    if (worldSize > 1) {
+        int iaLen = graph.IA.size();
+        int jaLen = graph.JA.size();
+        int aLen = graph.A.size();
 
-    printf("number of items: %zu\n", itemsMap.size());
+        MPI_Bcast(&iaLen, 1, MPI_INT32_T, 0, MPI_COMM_WORLD);
+        MPI_Bcast(&jaLen, 1, MPI_INT32_T, 0, MPI_COMM_WORLD);
+        MPI_Bcast(&aLen, 1, MPI_INT32_T, 0, MPI_COMM_WORLD);
+
+        if (rank != 0) {
+            graph.IA.resize(iaLen);
+            graph.JA.resize(jaLen);
+            graph.A.resize(aLen);
+        }
+
+        MPI_Bcast(graph.IA.data(), graph.IA.size() * sizeof(uint32_t), MPI_BYTE,
+                  0, MPI_COMM_WORLD);
+        MPI_Bcast(graph.JA.data(), graph.JA.size() * sizeof(uint32_t), MPI_BYTE,
+                  0, MPI_COMM_WORLD);
+        MPI_Bcast(graph.A.data(), graph.A.size() * sizeof(System), MPI_BYTE, 0,
+                  MPI_COMM_WORLD);
+    }
+
+    // std::vector<Item> itemsMap = tdb.loadItemTypes();
+    // printf("number of items: %zu\n", itemsMap.size());
 
     int32_t solIndex = -1;
     for (int32_t i = 0; i < marketInfo.systems.size(); i++) {
