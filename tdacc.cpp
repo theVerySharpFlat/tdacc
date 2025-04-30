@@ -4,6 +4,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <mpi.h>
+#include <mpi_proto.h>
 #include <omp.h>
 #include <optional>
 #include <queue>
@@ -162,7 +164,7 @@ int traverse(const MarketInfo &marketInfo, const GalaxyGraph &graph,
     return 0;
 }
 
-int main(int argc, const char **argv) {
+int main(int argc, char **argv) {
     if (argc < 5) {
         fprintf(stderr, "please enter arguments in the following order: "
                         "jump_range, n_jumps, n_hops, capacity\n");
@@ -177,6 +179,13 @@ int main(int argc, const char **argv) {
     std::cout << "jumps: " << nJumps << std::endl;
     std::cout << "hops: " << nHops << std::endl;
     std::cout << "capacity: " << capacity << std::endl;
+
+    MPI_Init(&argc, &argv);
+    int worldSize;
+    MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
+
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     TDB tdb("data/TradeDangerous.db");
     // std::vector<System> systems = tdb.loadSystems();
@@ -255,22 +264,55 @@ int main(int argc, const char **argv) {
         }
     }
 
-    printf("optimal solution to system id %ld with profit %ld\n from ",
-           marketInfo.systems[optimalSolution.dstSystemIndex].id,
-           optimalSolution.totalProfit);
+    // printf("optimal solution to system id %ld with profit %ld\n from ",
+    //        marketInfo.systems[optimalSolution.dstSystemIndex].id,
+    //        optimalSolution.totalProfit);
 
     std::vector<std::vector<Solution>> previousSolutions = {solutions};
+    BitRange previousVisitedSet(visitedSet.size);
+
+    for (size_t i = 0; i < visitedSet.size; i++) {
+        if (visitedSet.get(i)) {
+            previousVisitedSet.set(i);
+        }
+    }
     // std::vector<Solution> &previousSolutions = solutions;
 
     for (int hopNum = 1; hopNum < nHops; hopNum++) {
-        // omp_set_num_threads(8);
+        int startIndex = 0;
+        int endIndex = previousVisitedSet.size;
+
+        // compute start and end indices if we're using MPI
+        if (worldSize > 1) {
+            int count = 0;
+            int originsPerRank = originCount / worldSize;
+            int currentRank = 0;
+            for (int32_t i = 0; i < previousVisitedSet.size; i++) {
+                if (previousVisitedSet.get(i)) {
+                    count++;
+                }
+
+                if (count == (originsPerRank * rank)) {
+                    startIndex = i;
+                    endIndex = startIndex + originsPerRank;
+                }
+
+                if (count == (originsPerRank * (rank + 1))) {
+                    endIndex = i;
+                    if (rank == worldSize - 1) {
+                        endIndex = previousVisitedSet.size;
+                    }
+                }
+            }
+        }
+
         std::vector<Solution> hopSolutions(marketInfo.stations.size());
         BitRange hopVisitedSet(marketInfo.systems.size());
         int32_t nIterations = 0;
 #pragma omp parallel for schedule(dynamic)
-        for (int32_t i = 0; i < visitedSet.size; i++) {
+        for (int32_t i = startIndex; i < endIndex; i++) {
             BitRange hopVisitedSetTraverse(marketInfo.systems.size());
-            if (visitedSet.get(i)) {
+            if (previousVisitedSet.get(i)) {
                 traverse(marketInfo, graph,
                          &previousSolutions[previousSolutions.size() - 1],
                          hopSolutions, solutionLocks, hopVisitedSetTraverse, i,
@@ -287,17 +329,68 @@ int main(int argc, const char **argv) {
             }
         }
 
+        if (worldSize > 1) {
+            if (rank == 0) {
+                BitRange tempRange(visitedSet.size);
+                std::vector<Solution> tempHopSolutions(
+                    marketInfo.stations.size());
+                for (int i = 1; i < worldSize; i++) {
+                    MPI_Recv(tempRange.buf, tempRange.nmemb, MPI_UINT64_T, i, 0,
+                             MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    MPI_Recv((void *)&tempHopSolutions[0],
+                             tempHopSolutions.size() * sizeof(Solution),
+                             MPI_BYTE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                    // combine visited set
+                    for (int32_t j = 0; j < tempRange.size; j++) {
+                        if (tempRange.get(j))
+                            hopVisitedSet.set(j);
+                    }
+
+                    // combine solutions (I.E max of the two)
+                    for (int32_t j = 0; j < tempHopSolutions.size(); j++) {
+                        if (tempHopSolutions[j].totalProfit >
+                            hopSolutions[j].totalProfit) {
+                            hopSolutions[j] = tempHopSolutions[j];
+                        }
+                    }
+                }
+            } else {
+                MPI_Send(hopVisitedSet.buf, hopVisitedSet.nmemb, MPI_UINT64_T,
+                         0, 0, MPI_COMM_WORLD);
+                MPI_Send(hopSolutions.data(),
+                         hopSolutions.size() * sizeof(Solution), MPI_BYTE, 0, 0,
+                         MPI_COMM_WORLD);
+            }
+
+            // sync
+            MPI_Bcast(hopVisitedSet.buf, hopVisitedSet.nmemb, MPI_UINT64_T, 0,
+                      MPI_COMM_WORLD);
+            MPI_Bcast(hopSolutions.data(),
+                      hopSolutions.size() * sizeof(Solution), MPI_BYTE, 0,
+                      MPI_COMM_WORLD);
+        }
+
         originCount = 0;
-        for (size_t i = 0; i < visitedSet.size; i++) {
+        for (size_t i = 0; i < hopVisitedSet.size; i++) {
             if (hopVisitedSet.get(i)) {
                 originCount++;
             }
         }
 
+        for (size_t i = 0; i < hopVisitedSet.size; i++) {
+            if (hopVisitedSet.get(i)) {
+                previousVisitedSet.set(i);
+            }
+        }
         previousSolutions.push_back(hopSolutions);
     }
 
     // for (size_t i = previousSolutions.size() - 1; i >= 0; i--) {
+    if (rank != 0) {
+        return 0;
+    }
+
     int i = previousSolutions.size() - 1;
     optimalSolution = previousSolutions[i][0];
     for (int64_t j = 0; j < previousSolutions[i].size(); j++) {

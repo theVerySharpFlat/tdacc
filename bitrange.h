@@ -6,8 +6,8 @@
 class BitRange {
   public:
     BitRange(size_t size) : size(size) {
-        buf = (uint64_t *)calloc(size / 64 + ((size % 64) != 0),
-                                 sizeof(uint64_t));
+        nmemb = size / 64 + ((size % 64) != 0);
+        buf = (uint64_t *)calloc(nmemb, sizeof(uint64_t));
     }
 
     virtual ~BitRange() { free(buf); }
@@ -17,5 +17,6 @@ class BitRange {
     bool get(size_t bitNum) { return buf[bitNum / 64] & (1 << (bitNum % 64)); }
 
     size_t size;
+    size_t nmemb;
     uint64_t *buf;
 };
