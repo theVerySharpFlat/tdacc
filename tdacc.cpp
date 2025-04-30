@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <omp.h>
 #include <optional>
 #include <queue>
 #include <utility>
@@ -76,8 +77,9 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
 
 int traverse(const MarketInfo &marketInfo, const GalaxyGraph &graph,
              std::optional<const std::vector<Solution> *> previousSolutions,
-             std::vector<Solution> &solutions, BitRange &visitedSet,
-             int64_t startSystemIndex, int64_t jumps) {
+             std::vector<Solution> &solutions,
+             std::vector<omp_lock_t> &solutionLocks, BitRange &visitedSet,
+             int64_t startSystemIndex, int64_t jumps, int capacity) {
     // BitRange visitedSet(marketInfo.systems.size());
 
     struct Node {
@@ -115,15 +117,16 @@ int traverse(const MarketInfo &marketInfo, const GalaxyGraph &graph,
                      marketInfo.systems[curr.index].stationStartIndex;
                  dstStationIndex < dstEndStationIndex; dstStationIndex++) {
                 int64_t profit = computeMaxProfitWithStationIndices(
-                    srcStationIndex, dstStationIndex, marketInfo, 712);
+                    srcStationIndex, dstStationIndex, marketInfo, capacity);
 
                 if (previousSolutions) {
                     profit += (*(previousSolutions.value()))[srcStationIndex]
                                   .totalProfit;
                 }
 
+                // begin critical section
+                omp_set_lock(&solutionLocks[dstStationIndex]);
                 if (profit > solutions[dstStationIndex].totalProfit) {
-                    // begin critical section
                     solutions[dstStationIndex] = Solution{
                         .srcSystemIndex = startSystemIndex,
                         .srcStationIndex = srcStationIndex,
@@ -131,8 +134,9 @@ int traverse(const MarketInfo &marketInfo, const GalaxyGraph &graph,
                         .dstStationIndex = dstStationIndex,
                         .totalProfit = profit,
                     };
-                    // end critical section
                 }
+                omp_unset_lock(&solutionLocks[dstStationIndex]);
+                // end critical section
             }
         }
 
@@ -158,7 +162,22 @@ int traverse(const MarketInfo &marketInfo, const GalaxyGraph &graph,
     return 0;
 }
 
-int main() {
+int main(int argc, const char **argv) {
+    if (argc < 5) {
+        fprintf(stderr, "please enter arguments in the following order: "
+                        "jump_range, n_jumps, n_hops, capacity\n");
+        return 0;
+    }
+    double maxJump = std::stod(argv[1]);
+    int nJumps = std::stoi(argv[2]);
+    int nHops = std::stoi(argv[3]);
+    int capacity = std::stoi(argv[4]);
+
+    std::cout << "jump range: " << maxJump << std::endl;
+    std::cout << "jumps: " << nJumps << std::endl;
+    std::cout << "hops: " << nHops << std::endl;
+    std::cout << "capacity: " << capacity << std::endl;
+
     TDB tdb("data/TradeDangerous.db");
     // std::vector<System> systems = tdb.loadSystems();
     MarketInfo marketInfo;
@@ -173,7 +192,6 @@ int main() {
     GalaxyGraph graph;
     graph.IA.push_back(0);
 
-    double maxJump = 20.0;
     uint32_t nnz = 0;
     for (int i = 0; i < marketInfo.systems.size(); i++) {
         for (int j = 0; j < marketInfo.systems.size(); j++) {
@@ -214,9 +232,14 @@ int main() {
     }
 
     std::vector<Solution> solutions(marketInfo.stations.size());
+    std::vector<omp_lock_t> solutionLocks(solutions.size());
+    for (omp_lock_t &lock : solutionLocks) {
+        omp_init_lock(&lock);
+    }
+
     BitRange visitedSet(marketInfo.systems.size());
-    traverse(marketInfo, graph, std::nullopt, solutions, visitedSet, solIndex,
-             3);
+    traverse(marketInfo, graph, std::nullopt, solutions, solutionLocks,
+             visitedSet, solIndex, nJumps, capacity);
 
     Solution optimalSolution = solutions[0];
     for (Solution solution : solutions) {
@@ -236,32 +259,56 @@ int main() {
            marketInfo.systems[optimalSolution.dstSystemIndex].id,
            optimalSolution.totalProfit);
 
-    std::vector<Solution> hop2Solutions(marketInfo.stations.size());
-    BitRange hop2VisitedSet(marketInfo.systems.size());
-    int32_t nIterations = 0;
-    for (int32_t i = 0; i < visitedSet.size; i++) {
-        BitRange hop2VisitedSetTraverse(marketInfo.systems.size());
-        if (visitedSet.get(i)) {
-            traverse(marketInfo, graph, &solutions, hop2Solutions,
-                     hop2VisitedSetTraverse, i, 3);
-            nIterations++;
-            printf("%d/%zu\n", nIterations, originCount);
+    std::vector<std::vector<Solution>> previousSolutions = {solutions};
+    // std::vector<Solution> &previousSolutions = solutions;
+
+    for (int hopNum = 1; hopNum < nHops; hopNum++) {
+        // omp_set_num_threads(8);
+        std::vector<Solution> hopSolutions(marketInfo.stations.size());
+        BitRange hopVisitedSet(marketInfo.systems.size());
+        int32_t nIterations = 0;
+#pragma omp parallel for schedule(dynamic)
+        for (int32_t i = 0; i < visitedSet.size; i++) {
+            BitRange hopVisitedSetTraverse(marketInfo.systems.size());
+            if (visitedSet.get(i)) {
+                traverse(marketInfo, graph,
+                         &previousSolutions[previousSolutions.size() - 1],
+                         hopSolutions, solutionLocks, hopVisitedSetTraverse, i,
+                         nJumps, capacity);
+                nIterations++;
+                if (nIterations % 100 == 0) {
+                    printf("%d/%zu\n", nIterations, originCount);
+                }
+            }
+
+            for (int32_t j = 0; j < hopVisitedSetTraverse.size; j++) {
+                if (hopVisitedSetTraverse.get(j))
+                    hopVisitedSet.set(j);
+            }
         }
 
-        for (int32_t j = 0; j < hop2VisitedSetTraverse.size; j++) {
-            if (hop2VisitedSetTraverse.get(j))
-                hop2VisitedSet.set(j);
+        originCount = 0;
+        for (size_t i = 0; i < visitedSet.size; i++) {
+            if (hopVisitedSet.get(i)) {
+                originCount++;
+            }
         }
+
+        previousSolutions.push_back(hopSolutions);
     }
 
-    optimalSolution = hop2Solutions[0];
-    for (int64_t i = 0; i < hop2Solutions.size(); i++) {
-        Solution &solution = hop2Solutions[i];
+    // for (size_t i = previousSolutions.size() - 1; i >= 0; i--) {
+    int i = previousSolutions.size() - 1;
+    optimalSolution = previousSolutions[i][0];
+    for (int64_t j = 0; j < previousSolutions[i].size(); j++) {
+        Solution &solution = previousSolutions[i][j];
         if (solution.totalProfit > optimalSolution.totalProfit) {
             optimalSolution = solution;
         }
     }
-    printf("optimal solution to system id %ld and station id %ld from system "
+
+    printf("hop %d:\n", nHops);
+    printf("\toptimal solution to system id %ld and station id %ld from system "
            "id %ld and station id %ld with profit "
            "%ld\n",
            marketInfo.systems[optimalSolution.dstSystemIndex].id,
@@ -269,6 +316,21 @@ int main() {
            marketInfo.systems[optimalSolution.srcSystemIndex].id,
            marketInfo.stations[optimalSolution.srcStationIndex].id,
            optimalSolution.totalProfit);
+
+    for (int j = i - 1; j >= 0; j--) {
+        optimalSolution = previousSolutions[j][optimalSolution.srcStationIndex];
+        printf("hop %d:\n", j + 1);
+        printf("\toptimal solution to system id %ld and station id %ld from "
+               "system "
+               "id %ld and station id %ld with profit "
+               "%ld\n",
+               marketInfo.systems[optimalSolution.dstSystemIndex].id,
+               marketInfo.stations[optimalSolution.dstStationIndex].id,
+               marketInfo.systems[optimalSolution.srcSystemIndex].id,
+               marketInfo.stations[optimalSolution.srcStationIndex].id,
+               optimalSolution.totalProfit);
+    }
+    // }
 
     return 0;
 }
