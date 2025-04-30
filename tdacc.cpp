@@ -74,46 +74,6 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
     return profit;
 };
 
-Solution computeSolution(int64_t startSystemIndex, int64_t endSystemIndex,
-                         const MarketInfo &marketInfo, int64_t space) {
-    Solution solution = {
-        .srcSystemIndex = startSystemIndex,
-        .dstSystemIndex = endSystemIndex,
-
-        .totalProfit = -1,
-    };
-
-    int64_t srcEndStationIndex =
-        marketInfo.systems[startSystemIndex].stationStartIndex +
-        marketInfo.systems[startSystemIndex].nStations;
-    int64_t dstEndStationIndex =
-        marketInfo.systems[endSystemIndex].stationStartIndex +
-        marketInfo.systems[endSystemIndex].nStations;
-
-    // printf("dst nStations: %d\n",
-    // marketInfo.systems[endSystemIndex].nStations); printf("src nStations:
-    // %d\n",
-    //        marketInfo.systems[startSystemIndex].nStations);
-    for (int64_t srcStationIndex =
-             marketInfo.systems[startSystemIndex].stationStartIndex;
-         srcStationIndex < srcEndStationIndex; srcStationIndex++) {
-        for (int64_t dstStationIndex =
-                 marketInfo.systems[endSystemIndex].stationStartIndex;
-             dstStationIndex < dstEndStationIndex; dstStationIndex++) {
-            int64_t profit = computeMaxProfitWithStationIndices(
-                srcStationIndex, dstStationIndex, marketInfo, space);
-
-            if (profit > solution.totalProfit) {
-                solution.srcStationIndex = srcStationIndex;
-                solution.dstStationIndex = dstStationIndex;
-                solution.totalProfit = profit;
-            }
-        }
-    }
-
-    return solution;
-}
-
 int traverse(const MarketInfo &marketInfo, const GalaxyGraph &graph,
              std::optional<const std::vector<Solution> *> previousSolutions,
              std::vector<Solution> &solutions, BitRange &visitedSet,
@@ -140,19 +100,42 @@ int traverse(const MarketInfo &marketInfo, const GalaxyGraph &graph,
 
         // Compute solutions here
         // solutions[curr.index] =
-        Solution solution =
-            computeSolution(startSystemIndex, curr.index, marketInfo, 712);
+        // Solution solution =
+        //     computeSolution(startSystemIndex, curr.index, marketInfo, 712);
+        int64_t srcEndStationIndex =
+            marketInfo.systems[startSystemIndex].stationStartIndex +
+            marketInfo.systems[startSystemIndex].nStations;
+        int64_t dstEndStationIndex =
+            marketInfo.systems[curr.index].stationStartIndex +
+            marketInfo.systems[curr.index].nStations;
+        for (int64_t srcStationIndex =
+                 marketInfo.systems[startSystemIndex].stationStartIndex;
+             srcStationIndex < srcEndStationIndex; srcStationIndex++) {
+            for (int64_t dstStationIndex =
+                     marketInfo.systems[curr.index].stationStartIndex;
+                 dstStationIndex < dstEndStationIndex; dstStationIndex++) {
+                int64_t profit = computeMaxProfitWithStationIndices(
+                    srcStationIndex, dstStationIndex, marketInfo, 712);
 
-        if (previousSolutions) {
-            solution.totalProfit +=
-                (*(previousSolutions.value()))[solution.srcSystemIndex]
-                    .totalProfit;
+                if (previousSolutions) {
+                    profit += (*(previousSolutions.value()))[srcStationIndex]
+                                  .totalProfit;
+                }
+
+                if (profit > solutions[dstStationIndex].totalProfit) {
+                    // begin critical section
+                    solutions[dstStationIndex] = Solution{
+                        .srcSystemIndex = startSystemIndex,
+                        .srcStationIndex = srcStationIndex,
+                        .dstSystemIndex = curr.index,
+                        .dstStationIndex = dstStationIndex,
+                        .totalProfit = profit,
+                    };
+                    // end critical section
+                }
+            }
         }
-        // begin critical section
-        if (solutions[curr.index].totalProfit < solution.totalProfit) {
-            solutions[curr.index] = solution;
-        }
-        // end critical section
+
         // if (solutions[curr.index].totalProfit > 20000000)
         //     printf("profitttt: %lu\n", solutions[curr.index].totalProfit);
 
@@ -230,10 +213,10 @@ int main() {
         fprintf(stderr, "found sol at index %d\n", solIndex);
     }
 
-    std::vector<Solution> solutions(marketInfo.systems.size());
+    std::vector<Solution> solutions(marketInfo.stations.size());
     BitRange visitedSet(marketInfo.systems.size());
     traverse(marketInfo, graph, std::nullopt, solutions, visitedSet, solIndex,
-             10);
+             3);
 
     Solution optimalSolution = solutions[0];
     for (Solution solution : solutions) {
@@ -253,14 +236,14 @@ int main() {
            marketInfo.systems[optimalSolution.dstSystemIndex].id,
            optimalSolution.totalProfit);
 
-    std::vector<Solution> hop2Solutions(marketInfo.systems.size());
+    std::vector<Solution> hop2Solutions(marketInfo.stations.size());
     BitRange hop2VisitedSet(marketInfo.systems.size());
     int32_t nIterations = 0;
     for (int32_t i = 0; i < visitedSet.size; i++) {
         BitRange hop2VisitedSetTraverse(marketInfo.systems.size());
         if (visitedSet.get(i)) {
             traverse(marketInfo, graph, &solutions, hop2Solutions,
-                     hop2VisitedSetTraverse, i, 10);
+                     hop2VisitedSetTraverse, i, 3);
             nIterations++;
             printf("%d/%zu\n", nIterations, originCount);
         }
@@ -274,13 +257,12 @@ int main() {
     optimalSolution = hop2Solutions[0];
     for (int64_t i = 0; i < hop2Solutions.size(); i++) {
         Solution &solution = hop2Solutions[i];
-        if (hop2VisitedSet.get(i)) {
-            if (solution.totalProfit > optimalSolution.totalProfit) {
-                optimalSolution = solution;
-            }
+        if (solution.totalProfit > optimalSolution.totalProfit) {
+            optimalSolution = solution;
         }
     }
-    printf("optimal solution to system id %ld and station id %ld from system id %ld and station id %ld with profit "
+    printf("optimal solution to system id %ld and station id %ld from system "
+           "id %ld and station id %ld with profit "
            "%ld\n",
            marketInfo.systems[optimalSolution.dstSystemIndex].id,
            marketInfo.stations[optimalSolution.dstStationIndex].id,
