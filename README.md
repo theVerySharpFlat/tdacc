@@ -39,6 +39,8 @@ In addition to task-parallelism, the algorithm I developed is also somewhat data
 In general, there is a memory/performance tradeoff with many HPC algorithms. This program is no exception. The approach that I take in this program is to allocate more for faster access. This means that I load the entirety of the system market data into ram and also distribute it across MPI ranks in order to minimize the need for communication between ranks. Furthermore, one solution per station per hop per rank is allocated in order to ensure constant time access to solutions. On the other hand, I have taken some steps to reduce RAM usage. For example, I created a custom bitset class to implement the visited set structure for the BFS traversals in my algorithm. Packing booleans into bit vectors generally lowers memory usage by a factor of 32 or 64 (since you can cram 32 or 64 booleans into a single int32/64)
 
 ## Running
+The reference database is present in releases and should be downloaded to data/TradeDangerous.db
+
 ```
 ./build/tdacc
 ```
@@ -60,12 +62,14 @@ In terms of global verification, this can be done with the reference implementat
 
 ### OpenMP Threads vs Time (Seconds)
 ![](threads.png)
+
 The above is a plot for the data present in [tdacc-run.csv](tdacc-run.csv), generated with the script [run.sbatch](run.sbatch) where the parameters are 10 jumps, 10 ly per jump, and 2 hops. Note that the first srun in the script is used for a different section. In terms of scaling, we can see that the performance increase from 1 thread to 4 is drastic, yielding a speedup of over 100 seconds. However, the jump from 4 to 8 threads and 8 to 16 threads yields speedups in the magnitude of 10s of seconds. Following a decreasing trend, the jump from 16 to 24 threads is only a 5 second speedup.
 
 Unfortunately, I did not solely time the serial portions of the program. Thus, the times shown in the graph include loading data and the initial traversal. Empirically, this takes about 30s uniformly. Thus, we can calculate our strong scaling speedups
 
+
 | NUM_THREADS | TIME | SPEEDUP |
-| ---- | ---- |
+| --- | --- | --- |
 | 1 | 396 | 1 |
 | 4 | 262 | 1.5 |
 | 8 | 249 | 1.6 |
