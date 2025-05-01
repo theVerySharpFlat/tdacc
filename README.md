@@ -38,6 +38,24 @@ In addition to task-parallelism, the algorithm I developed is also somewhat data
 ### Memory Usage
 In general, there is a memory/performance tradeoff with many HPC algorithms. This program is no exception. The approach that I take in this program is to allocate more for faster access. This means that I load the entirety of the system market data into ram and also distribute it across MPI ranks in order to minimize the need for communication between ranks. Furthermore, one solution per station per hop per rank is allocated in order to ensure constant time access to solutions. On the other hand, I have taken some steps to reduce RAM usage. For example, I created a custom bitset class to implement the visited set structure for the BFS traversals in my algorithm. Packing booleans into bit vectors generally lowers memory usage by a factor of 32 or 64 (since you can cram 32 or 64 booleans into a single int32/64)
 
+## Running
+```
+./build/tdacc
+```
+shows a help message
+
+### Compilation
+Note that all tests performed were using the intel icx compler and intel mpi libraries present on ICE.
+
+### Verification
+Verification can be performed by running the run.sbatch script and then performing the following
+```
+cat tdacc-run-2549823.log | grep -A 1 "hop 2" | grep optimal | uniq
+```
+where you replace the tdacc-run-...log file with the log file from your run. From this, two distinct results should be observed as there are two distinct parameter sets. If there are more, this means that threading has yielded incorrect results.
+
+In terms of global verification, this can be done with the reference implementatio, the trade dangerous script, project linked above.
+
 ## Results
 
 ### OpenMP Threads vs Time (Seconds)
