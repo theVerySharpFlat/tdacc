@@ -35,8 +35,37 @@ In the initial OpenMP portion of the code, systems were naively distributed betw
 
 In addition to task-parallelism, the algorithm I developed is also somewhat data-parallel. While data-parallel is generally a machine learning concept, its relevance to my project becomes evident when you consider the algorithm as the "model". In my algorithm, the data (analogous to the training set in ML), is split across processors, results are computed independently, and crucially results are all sent back to a single source to be collated (instead of average gradients, I perform a maximum). Then, the current state of the program (source systems, previous solutions) is bcasted out to all the workers from the root. The benefit of this method, rather than parallelizing the traversals themselves, is that synchronization/communication only needs to occur at the end of computation, rather than during it.
 
+### Memory Usage
+In general, there is a memory/performance tradeoff with many HPC algorithms. This program is no exception. The approach that I take in this program is to allocate more for faster access. This means that I load the entirety of the system market data into ram and also distribute it across MPI ranks in order to minimize the need for communication between ranks. Furthermore, one solution per station per hop per rank is allocated in order to ensure constant time access to solutions. On the other hand, I have taken some steps to reduce RAM usage. For example, I created a custom bitset class to implement the visited set structure for the BFS traversals in my algorithm. Packing booleans into bit vectors generally lowers memory usage by a factor of 32 or 64 (since you can cram 32 or 64 booleans into a single int32/64)
+
 ## Results
 
+### OpenMP Threads vs Time (Seconds)
 ![](threads.png)
+The above is a plot for the data present in [tdacc-run.csv](tdacc-run.csv), generated with the script [run.sbatch](run.sbatch) where the parameters are 10 jumps, 10 ly per jump, and 2 hops. Note that the first srun in the script is used for a different section. In terms of scaling, we can see that the performance increase from 1 thread to 4 is drastic, yielding a speedup of over 100 seconds. However, the jump from 4 to 8 threads and 8 to 16 threads yields speedups in the magnitude of 10s of seconds. Following a decreasing trend, the jump from 16 to 24 threads is only a 5 second speedup.
 
+Unfortunately, I did not solely time the serial portions of the program. Thus, the times shown in the graph include loading data and the initial traversal. Empirically, this takes about 30s uniformly. Thus, we can calculate our strong scaling speedups
+
+|NUM_THREADS|TIME|SPEEDUP|
+|1|396|1|
+|4|262|1.5|
+|8|249|1.6|
+|16|218|1.8|
+|24|213|1.85|
+
+As is evident by the above *actual* speedups, increasing thread count does not yield ideal results (I.E, 4 threads would lead to a speedup of 4). Furthermore, as is evident from the above graph and table, increasing thread count has diminishing returns, with initial increases yielding larger speedups and subsequent ones tapering off in benefit. This could be a result of a number of factors (in order of likelihood).
+1. The more threads present, the more contention there is for writing solutions (in the OpenMP implementation, at least)
+2. Once the work is split up into small enough groups, thread creation and management overhead becomes a problem
+3. Larger thread counts lead to lower individual core clock speeds and OS threads have to fight for priority as well.
+
+### MPI Ranks/OMP Threads vs Time (Seconds)
 ![](mpiomp.png)
+
+The above is a graph of time to completion (same conditions as the previous graph) with varying MPI/OpenMP ranks/threads. Since the variation between time to completion is in the order of a few seconds out of hundreds overall, we can conclude that there isn't, at least on single node runs, much of a performance loss/gain from varying the amount of OpenMP and MPI threads/ranks.
+
+### Improvement over existing solutions
+While thread-to-thread scaling might not be as ideal as I had hoped, the performance gain over Trade Dangerous is impressive. For example, running Trade Dangerous with 20 ly per jump, 10 jumps, and 2 hops completed in 8 hours and 47 minutes on my desktop. The same run on my desktop completed in 2 minutes and 45 seconds. This is about a 190x speedup. On ICE, running on the 24 core intel nodes, this takes 9 minutes and 10 seconds.
+
+## Conclusion
+
+The goal of this project was to create a faster Elite Dangerous trade-route finder that utilizes all the available resources on a system to extract as much performance as possible. Compared to the existing solution, Trade Dangerous, this goal was vastly exceeded. However, scaling on systems with large but weaker cores, such as the ICE cluster, leaves some room for improvement. In the future, a more detailed performance analysis of TDACC can be performed in order to figure out where the bottleneck is: thread overhead, communication, or the computation itself.
