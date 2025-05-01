@@ -1,0 +1,420 @@
+---------------------------------------
+Begin Slurm Prolog: Apr-30-2025 21:50:13
+Job ID:    2549827
+User ID:   alambert48
+Account:   ice-pace-staff
+Job name:  run-mpi.sbatch
+Partition: pace-cpu
+QOS:       ice-pace-staff
+---------------------------------------
+jump range: 10
+jumps: 10
+hops: 2
+capacity: 712
+system count: 71059
+station count: 265441
+listing count: 11792320
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+hop 2:
+	optimal solution to system id 4477243361643 and station id 3228766720 from system id 5061358913899 and station id 3228829696 with profit 39495401
+hop 1:
+	optimal solution to system id 5061358913899 and station id 3228829696 from system id 10477373803 and station id 3802401536 with profit 13328689
+0.03user 0.01system 3:50.43elapsed 0%CPU (0avgtext+0avgdata 9216maxresident)k
+0inputs+40outputs (0major+1593minor)pagefaults 0swaps
+jump range: 10
+jumps: 10
+hops: 2
+capacity: 712
+system count: 71059
+station count: 265441
+listing count: 11792320
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+200/4562
+100/4562
+200/4562
+200/4562
+200/4562
+300/4562
+200/4562
+200/4562
+200/4562
+200/4562
+200/4562
+300/4562
+200/4562
+200/4562
+200/4562
+300/4562
+300/4562
+300/4562
+300/4562
+300/4562
+300/4562
+300/4562
+300/4562
+300/4562
+300/4562
+hop 2:
+	optimal solution to system id 4477243361643 and station id 3228766720 from system id 5061358913899 and station id 3228829696 with profit 39495401
+hop 1:
+	optimal solution to system id 5061358913899 and station id 3228829696 from system id 10477373803 and station id 3802401536 with profit 13328689
+0.03user 0.01system 3:43.84elapsed 0%CPU (0avgtext+0avgdata 9216maxresident)k
+0inputs+48outputs (0major+1594minor)pagefaults 0swaps
+jump range: 10
+jumps: 10
+hops: 2
+capacity: 712
+system count: 71059
+station count: 265441
+listing count: 11792320
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+100/4562
+200/4562
+200/4562
+300/4562
+200/4562
+200/4562
+200/4562
+200/4562
+400/4562
+300/4562
+300/4562
+300/4562
+300/4562
+300/4562
+500/4562
+400/4562
+400/4562
+600/4562
+400/4562
+400/4562
+400/4562
+500/4562
+500/4562
+700/4562
+500/4562
+500/4562
+600/4562
+600/4562
+500/4562
+600/4562
+700/4562
+700/4562
+600/4562
+600/4562
+700/4562
+700/4562
+700/4562
+hop 2:
+	optimal solution to system id 4477243361643 and station id 3228766720 from system id 5061358913899 and station id 3228829696 with profit 39495401
+hop 1:
+	optimal solution to system id 5061358913899 and station id 3228829696 from system id 10477373803 and station id 3802401536 with profit 13328689
+0.02user 0.01system 3:43.42elapsed 0%CPU (0avgtext+0avgdata 9216maxresident)k
+0inputs+40outputs (0major+1596minor)pagefaults 0swaps
+jump range: 10
+jumps: 10
+hops: 2
+capacity: 712
+system count: 71059
+station count: 265441
+listing count: 11792320
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+found sol at index 34672
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+begin initial traversal...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+initial traversal finished...
+100/4562
+100/4562
+100/4562
+100/4562
+200/4562
+200/4562
+200/4562
+300/4562
+200/4562
+400/4562
+300/4562
+300/4562
+300/4562
+500/4562
+400/4562
+400/4562
+600/4562
+400/4562
+500/4562
+700/4562
+500/4562
+500/4562
+800/4562
+600/4562
+600/4562
+600/4562
+900/4562
+700/4562
+700/4562
+1000/4562
+700/4562
+800/4562
+800/4562
+1100/4562
+900/4562
+800/4562
+1000/4562
+900/4562
+900/4562
+1100/4562
+1000/4562
+1000/4562
+1100/4562
+1100/4562
+hop 2:
+	optimal solution to system id 4477243361643 and station id 3228766720 from system id 5061358913899 and station id 3228829696 with profit 39495401
+hop 1:
+	optimal solution to system id 5061358913899 and station id 3228829696 from system id 10477373803 and station id 3802401536 with profit 13328689
+0.03user 0.01system 3:47.04elapsed 0%CPU (0avgtext+0avgdata 9024maxresident)k
+0inputs+40outputs (0major+1596minor)pagefaults 0swaps
+jump range: 10
+jumps: 10
+hops: 2
+capacity: 712
+system count: 71059
+station count: 265441
+listing count: 11792320
+found sol at index 34672
+found sol at index 34672
+begin initial traversal...
+begin initial traversal...
+initial traversal finished...
+initial traversal finished...
+100/4562
+100/4562
+200/4562
+300/4562
+200/4562
+400/4562
+300/4562
+400/4562
+500/4562
+600/4562
+500/4562
+700/4562
+600/4562
+800/4562
+900/4562
+700/4562
+1000/4562
+800/4562
+1100/4562
+900/4562
+1200/4562
+1300/4562
+1000/4562
+1400/4562
+1100/4562
+1200/4562
+1500/4562
+1300/4562
+1600/4562
+1400/4562
+1700/4562
+1500/4562
+1800/4562
+1600/4562
+1900/4562
+1700/4562
+2000/4562
+1800/4562
+2100/4562
+1900/4562
+2200/4562
+2000/4562
+2100/4562
+2200/4562
+hop 2:
+	optimal solution to system id 4477243361643 and station id 3228766720 from system id 5061358913899 and station id 3228829696 with profit 39495401
+hop 1:
+	optimal solution to system id 5061358913899 and station id 3228829696 from system id 10477373803 and station id 3802401536 with profit 13328689
+0.02user 0.01system 3:41.40elapsed 0%CPU (0avgtext+0avgdata 9216maxresident)k
+0inputs+48outputs (0major+1594minor)pagefaults 0swaps
+---------------------------------------
+Begin Slurm Epilog: Apr-30-2025 22:08:59
+Job ID:        2549827
+User ID:       alambert48
+Account:       ice-pace-staff
+Job name:      run-mpi.sbatch
+Resources:     cpu=24,mem=192G,node=1
+Rsrc Used:     cput=07:30:24,vmem=0,walltime=00:18:46,mem=8136K,energy_used=0
+Partition:     pace-cpu
+QOS:           ice-pace-staff
+Nodes:         atl1-1-03-004-5-1
+---------------------------------------

@@ -1,0 +1,32 @@
+---------------------------------------
+Begin Slurm Prolog: Apr-30-2025 20:49:00
+Job ID:    2549781
+User ID:   alambert48
+Account:   ice-pace-staff
+Job name:  run.sbatch
+Partition: pace-cpu
+QOS:       ice-pace-staff
+---------------------------------------
+jump range: 20
+jumps: 10
+hops: 3
+capacity: 712
+system count: 71059
+station count: 265441
+listing count: 11792320
+found sol at index 34672
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+slurmstepd: error: *** JOB 2549781 ON atl1-1-01-005-2-1 CANCELLED AT 2025-04-30T21:19:03 DUE TO TIME LIMIT ***
+slurmstepd: error: *** STEP 2549781.0 ON atl1-1-01-005-2-1 CANCELLED AT 2025-04-30T21:19:03 DUE TO TIME LIMIT ***
+---------------------------------------
+Begin Slurm Epilog: Apr-30-2025 21:19:06
+Job ID:        2549781
+User ID:       alambert48
+Account:       ice-pace-staff
+Job name:      run.sbatch
+Resources:     cpu=24,mem=192G,node=1
+Rsrc Used:     cput=12:01:12,vmem=0,walltime=00:30:03,mem=7664K,energy_used=0
+Partition:     pace-cpu
+QOS:           ice-pace-staff
+Nodes:         atl1-1-01-005-2-1
+---------------------------------------

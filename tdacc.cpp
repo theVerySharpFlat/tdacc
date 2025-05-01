@@ -5,7 +5,6 @@
 #include <cstring>
 #include <iostream>
 #include <mpi.h>
-#include <mpi_proto.h>
 #include <omp.h>
 #include <optional>
 #include <queue>
@@ -305,9 +304,11 @@ int main(int argc, char **argv) {
         omp_init_lock(&lock);
     }
 
+    std::cout << "begin initial traversal..." << std::endl;
     BitRange visitedSet(marketInfo.systems.size());
     traverse(marketInfo, graph, std::nullopt, solutions, solutionLocks,
              visitedSet, solIndex, nJumps, capacity);
+    std::cout << "initial traversal finished..." << std::endl;
 
     Solution optimalSolution = solutions[0];
     for (Solution solution : solutions) {
