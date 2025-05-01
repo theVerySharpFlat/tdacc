@@ -64,12 +64,13 @@ The above is a plot for the data present in [tdacc-run.csv](tdacc-run.csv), gene
 
 Unfortunately, I did not solely time the serial portions of the program. Thus, the times shown in the graph include loading data and the initial traversal. Empirically, this takes about 30s uniformly. Thus, we can calculate our strong scaling speedups
 
-|NUM_THREADS|TIME|SPEEDUP|
-|1|396|1|
-|4|262|1.5|
-|8|249|1.6|
-|16|218|1.8|
-|24|213|1.85|
+| NUM_THREADS | TIME | SPEEDUP |
+| ---- | ---- |
+| 1 | 396 | 1 |
+| 4 | 262 | 1.5 |
+| 8 | 249 | 1.6 |
+| 16 | 218 | 1.8 |
+| 24 | 213 | 1.85 |
 
 As is evident by the above *actual* speedups, increasing thread count does not yield ideal results (I.E, 4 threads would lead to a speedup of 4). Furthermore, as is evident from the above graph and table, increasing thread count has diminishing returns, with initial increases yielding larger speedups and subsequent ones tapering off in benefit. This could be a result of a number of factors (in order of likelihood).
 1. The more threads present, the more contention there is for writing solutions (in the OpenMP implementation, at least)
