@@ -1,10 +1,12 @@
 #include "bitrange.h"
+#include "minmax_and_dary_heap.hpp"
 #include "tdb.h"
 #include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <iostream>
 #include <mpi.h>
 #include <omp.h>
@@ -38,8 +40,9 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
     int64_t profit = 0;
 
     // profitPer, nAvailible
-    // std::priority_queue<std::pair<int64_t, int64_t>> pq;
-    std::array<std::pair<int64_t, int64_t>, 1024> profits;
+    // thread_local std::priority_queue<std::pair<int64_t, int64_t>> pq;
+    // std::array<std::pair<int64_t, int64_t>, 1024> pq;
+    thread_local std::vector<std::pair<int64_t, int64_t>> pq(1024);
     int profitsIndex = 0;
     for (int64_t i = 0, j = 0;
          i < marketInfo.stations[srcStationIndex].nListings &&
@@ -55,8 +58,12 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
         if (srcPricing.itemID == dstPricing.itemID) {
             int64_t profitPer = dstPricing.demandPrice - srcPricing.supplyPrice;
             if (profitPer > 0) {
-                profits[profitsIndex++] =
+                pq[profitsIndex++] =
                     std::make_pair(profitPer, srcPricing.supplyQuantity);
+                // std::push_heap(pq.begin(), pq.begin() + profitsIndex);
+                // pq.emplace(profitPer, srcPricing.supplyQuantity);
+                // push_dary_heap<4>(pq.begin(), pq.begin() + profitsIndex);
+                // profitsIndex++;
             }
 
             i++;
@@ -67,12 +74,35 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
             j++;
         }
     }
+    // make_dary_heap<4>(pq.begin(), pq.begin() + profitsIndex,
+    // std::greater<>());
 
-    std::sort(profits.begin(), profits.begin() + profitsIndex,
-              std::greater<>());
+    // std::sort(pq.begin(), pq.begin() + profitsIndex);
+    for (int i = 0; i < profitsIndex - 1; i++) {
+        bool swapped = false;
+        for (int j = 0; j < profitsIndex - i - 1; j++) {
+            if (pq[j].first > pq[j + 1].first) {
+                std::swap(pq[j], pq[j + 1]);
+                swapped = true;
+            }
+            if (!swapped) {
+                break;
+            }
+        }
+    }
+    // std::make_heap(profits.begin(), profits.begin() + profitsIndex);
+    // std::priority_queue<std::pair<int64_t, int64_t>> pq(
+    //     profits.begin(), profits.begin() + profitsIndex);
 
     for (int i = 0; i < profitsIndex && total < space; i++) {
-        auto [profitPer, nAvailable] = profits[i];
+        // std::pop_heap(profits.begin(), profits.begin() + profitsIndex - i);
+        // auto [profitPer, nAvailable] =
+        //     pq.top(); // profits[profitsIndex - i - 1];
+        // pq.pop();
+        auto [profitPer, nAvailable] = pq[profitsIndex - i - 1];
+        // std::pop_heap(pq.begin(), pq.begin() + profitsIndex - i);
+
+        // pop_dary_heap<4>(pq.begin(), pq.begin() + profitsIndex - i);
 
         nAvailable = std::min(nAvailable, space - total);
 
