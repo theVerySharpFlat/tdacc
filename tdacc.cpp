@@ -78,7 +78,23 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
     // std::greater<>());
 
     // std::sort(pq.begin(), pq.begin() + profitsIndex);
-    for (int i = 0; i < profitsIndex - 1; i++) {
+    // for (int i = 0; i < profitsIndex - 1; i++) {
+    //     bool swapped = false;
+    //     for (int j = 0; j < profitsIndex - i - 1; j++) {
+    //         if (pq[j].first > pq[j + 1].first) {
+    //             std::swap(pq[j], pq[j + 1]);
+    //             swapped = true;
+    //         }
+    //         if (!swapped) {
+    //             break;
+    //         }
+    //     }
+    // }
+    // std::make_heap(profits.begin(), profits.begin() + profitsIndex);
+    // std::priority_queue<std::pair<int64_t, int64_t>> pq(
+    //     profits.begin(), profits.begin() + profitsIndex);
+
+    for (int i = 0; i < profitsIndex && total < space; i++) {
         bool swapped = false;
         for (int j = 0; j < profitsIndex - i - 1; j++) {
             if (pq[j].first > pq[j + 1].first) {
@@ -89,12 +105,6 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
                 break;
             }
         }
-    }
-    // std::make_heap(profits.begin(), profits.begin() + profitsIndex);
-    // std::priority_queue<std::pair<int64_t, int64_t>> pq(
-    //     profits.begin(), profits.begin() + profitsIndex);
-
-    for (int i = 0; i < profitsIndex && total < space; i++) {
         // std::pop_heap(profits.begin(), profits.begin() + profitsIndex - i);
         // auto [profitPer, nAvailable] =
         //     pq.top(); // profits[profitsIndex - i - 1];
