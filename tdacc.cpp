@@ -1,5 +1,4 @@
 #include "bitrange.h"
-#include "minmax_and_dary_heap.hpp"
 #include "tdb.h"
 #include <algorithm>
 #include <array>
@@ -13,6 +12,10 @@
 #include <optional>
 #include <queue>
 #include <utility>
+
+#define GALAXY_GRAPH_A_BLOCK_SIZE 8192
+#define GALAXY_GRAPH_JA_BLOCK_SIZE GALAXY_GRAPH_A_BLOCK_SIZE
+#define GALAXY_GRAPH_IA_BLOCK_SIZE 8192
 
 #define SQ(x) ((x) * (x))
 
@@ -39,9 +42,6 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
     int64_t total = 0;
     int64_t profit = 0;
 
-    // profitPer, nAvailible
-    // thread_local std::priority_queue<std::pair<int64_t, int64_t>> pq;
-    // std::array<std::pair<int64_t, int64_t>, 1024> pq;
     thread_local std::vector<std::pair<int64_t, int64_t>> pq(1024);
     int profitsIndex = 0;
     for (int64_t i = 0, j = 0;
@@ -58,12 +58,9 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
         if (srcPricing.itemID == dstPricing.itemID) {
             int64_t profitPer = dstPricing.demandPrice - srcPricing.supplyPrice;
             if (profitPer > 0) {
-                pq[profitsIndex++] =
-                    std::make_pair(profitPer, srcPricing.supplyQuantity);
-                // std::push_heap(pq.begin(), pq.begin() + profitsIndex);
-                // pq.emplace(profitPer, srcPricing.supplyQuantity);
-                // push_dary_heap<4>(pq.begin(), pq.begin() + profitsIndex);
-                // profitsIndex++;
+                pq[profitsIndex].first = profitPer;
+                pq[profitsIndex].second = srcPricing.supplyQuantity;
+                profitsIndex++;
             }
 
             i++;
@@ -74,25 +71,6 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
             j++;
         }
     }
-    // make_dary_heap<4>(pq.begin(), pq.begin() + profitsIndex,
-    // std::greater<>());
-
-    // std::sort(pq.begin(), pq.begin() + profitsIndex);
-    // for (int i = 0; i < profitsIndex - 1; i++) {
-    //     bool swapped = false;
-    //     for (int j = 0; j < profitsIndex - i - 1; j++) {
-    //         if (pq[j].first > pq[j + 1].first) {
-    //             std::swap(pq[j], pq[j + 1]);
-    //             swapped = true;
-    //         }
-    //         if (!swapped) {
-    //             break;
-    //         }
-    //     }
-    // }
-    // std::make_heap(profits.begin(), profits.begin() + profitsIndex);
-    // std::priority_queue<std::pair<int64_t, int64_t>> pq(
-    //     profits.begin(), profits.begin() + profitsIndex);
 
     for (int i = 0; i < profitsIndex && total < space; i++) {
         bool swapped = false;
@@ -105,14 +83,8 @@ int64_t computeMaxProfitWithStationIndices(int64_t srcStationIndex,
                 break;
             }
         }
-        // std::pop_heap(profits.begin(), profits.begin() + profitsIndex - i);
-        // auto [profitPer, nAvailable] =
-        //     pq.top(); // profits[profitsIndex - i - 1];
-        // pq.pop();
-        auto [profitPer, nAvailable] = pq[profitsIndex - i - 1];
-        // std::pop_heap(pq.begin(), pq.begin() + profitsIndex - i);
 
-        // pop_dary_heap<4>(pq.begin(), pq.begin() + profitsIndex - i);
+        auto [profitPer, nAvailable] = pq[profitsIndex - i - 1];
 
         nAvailable = std::min(nAvailable, space - total);
 
@@ -146,12 +118,6 @@ int traverse(const MarketInfo &marketInfo, const GalaxyGraph &graph,
         uint32_t endSize = graph.IA[curr.index + 1];
         uint32_t nAdjacent = endSize - startSize;
 
-        // printf("nAdjacent: %d\n", nAdjacent);
-
-        // Compute solutions here
-        // solutions[curr.index] =
-        // Solution solution =
-        //     computeSolution(startSystemIndex, curr.index, marketInfo, 712);
         int64_t srcEndStationIndex =
             marketInfo.systems[startSystemIndex].stationStartIndex +
             marketInfo.systems[startSystemIndex].nStations;
@@ -187,96 +153,6 @@ int traverse(const MarketInfo &marketInfo, const GalaxyGraph &graph,
                 // end critical section
             }
         }
-
-        // if (solutions[curr.index].totalProfit > 20000000)
-        //     printf("profitttt: %lu\n", solutions[curr.index].totalProfit);
-
-        if (curr.depth < jumps) {
-            for (uint32_t i = 0; i < nAdjacent; i++) {
-                const System &system = graph.A[startSize + i];
-
-                if (!visitedSet.get(system.index)) {
-                    queue.push({
-                        .index = system.index,
-                        .depth = curr.depth + 1,
-                    });
-
-                    visitedSet.set(system.index);
-                }
-            }
-        }
-    }
-
-    return 0;
-}
-
-int traverseNOP(const MarketInfo &marketInfo, const GalaxyGraph &graph,
-                std::optional<const std::vector<Solution> *> previousSolutions,
-                std::vector<Solution> &solutions,
-                std::vector<omp_lock_t> &solutionLocks, BitRange &visitedSet,
-                int64_t startSystemIndex, int64_t jumps, int capacity) {
-    // BitRange visitedSet(marketInfo.systems.size());
-
-    struct Node {
-        int64_t index;
-        int64_t depth;
-    };
-    std::queue<Node> queue;
-    queue.push({startSystemIndex, 0});
-    visitedSet.set(startSystemIndex);
-
-    while (!queue.empty()) {
-        Node curr = queue.front();
-        queue.pop();
-
-        uint32_t startSize = graph.IA[curr.index];
-        uint32_t endSize = graph.IA[curr.index + 1];
-        uint32_t nAdjacent = endSize - startSize;
-
-        // printf("nAdjacent: %d\n", nAdjacent);
-
-        // Compute solutions here
-        // solutions[curr.index] =
-        // Solution solution =
-        //     computeSolution(startSystemIndex, curr.index, marketInfo, 712);
-        // int64_t srcEndStationIndex =
-        //     marketInfo.systems[startSystemIndex].stationStartIndex +
-        //     marketInfo.systems[startSystemIndex].nStations;
-        // int64_t dstEndStationIndex =
-        //     marketInfo.systems[curr.index].stationStartIndex +
-        //     marketInfo.systems[curr.index].nStations;
-        // for (int64_t srcStationIndex =
-        //          marketInfo.systems[startSystemIndex].stationStartIndex;
-        //      srcStationIndex < srcEndStationIndex; srcStationIndex++) {
-        //     for (int64_t dstStationIndex =
-        //              marketInfo.systems[curr.index].stationStartIndex;
-        //          dstStationIndex < dstEndStationIndex; dstStationIndex++) {
-        // int64_t profit = computeMaxProfitWithStationIndices(
-        //     srcStationIndex, dstStationIndex, marketInfo, capacity);
-        //
-        // if (previousSolutions) {
-        //     profit += (*(previousSolutions.value()))[srcStationIndex]
-        //                   .totalProfit;
-        // }
-        //
-        // // begin critical section
-        // omp_set_lock(&solutionLocks[dstStationIndex]);
-        // if (profit > solutions[dstStationIndex].totalProfit) {
-        //     solutions[dstStationIndex] = Solution{
-        //         .srcSystemIndex = startSystemIndex,
-        //         .srcStationIndex = srcStationIndex,
-        //         .dstSystemIndex = curr.index,
-        //         .dstStationIndex = dstStationIndex,
-        //         .totalProfit = profit,
-        //     };
-        // }
-        // omp_unset_lock(&solutionLocks[dstStationIndex]);
-        // // end critical section
-        //     }
-        // }
-        //
-        // if (solutions[curr.index].totalProfit > 20000000)
-        //     printf("profitttt: %lu\n", solutions[curr.index].totalProfit);
 
         if (curr.depth < jumps) {
             for (uint32_t i = 0; i < nAdjacent; i++) {
@@ -325,12 +201,14 @@ int main(int argc, char **argv) {
     // std::vector<System> systems = tdb.loadSystems();
     MarketInfo marketInfo;
 
+    double loadStart = omp_get_wtime();
     if (rank == 0) {
         TDB tdb("data/TradeDangerous.db");
         if (tdb.loadMarketInfo(&marketInfo)) {
             exit(EXIT_FAILURE);
         }
     }
+    std::cout << "load wtime: " << omp_get_wtime() - loadStart << std::endl;
 
     if (worldSize > 1) {
         int stationsLen = marketInfo.stations.size();
@@ -367,6 +245,9 @@ int main(int argc, char **argv) {
     }
 
     GalaxyGraph graph;
+    graph.IA.reserve(GALAXY_GRAPH_IA_BLOCK_SIZE);
+    graph.A.reserve(GALAXY_GRAPH_A_BLOCK_SIZE);
+    graph.JA.reserve(GALAXY_GRAPH_JA_BLOCK_SIZE);
     if (rank == 0) {
         graph.IA.push_back(0);
 
@@ -414,9 +295,6 @@ int main(int argc, char **argv) {
                   MPI_COMM_WORLD);
     }
 
-    // std::vector<Item> itemsMap = tdb.loadItemTypes();
-    // printf("number of items: %zu\n", itemsMap.size());
-
     int32_t solIndex = -1;
     for (int32_t i = 0; i < marketInfo.systems.size(); i++) {
         if (marketInfo.systems[i].id == 10477373803) {
@@ -438,14 +316,10 @@ int main(int argc, char **argv) {
         omp_init_lock(&lock);
     }
 
-    // double start = omp_get_wtime();
     std::cout << "begin initial traversal..." << std::endl;
     BitRange visitedSet(marketInfo.systems.size());
     traverse(marketInfo, graph, std::nullopt, solutions, solutionLocks,
              visitedSet, solIndex, nJumps, capacity);
-    // std::cout << "initial traversal finished..."
-    //           << (omp_get_wtime() - start) * 1e3 << "ms" << std::endl;
-    // exit(0);
 
     Solution optimalSolution = solutions[0];
     for (Solution solution : solutions) {
@@ -461,10 +335,6 @@ int main(int argc, char **argv) {
         }
     }
 
-    // printf("optimal solution to system id %ld with profit %ld\n from ",
-    //        marketInfo.systems[optimalSolution.dstSystemIndex].id,
-    //        optimalSolution.totalProfit);
-
     std::vector<std::vector<Solution>> previousSolutions = {solutions};
     BitRange previousVisitedSet(visitedSet.size);
 
@@ -473,7 +343,6 @@ int main(int argc, char **argv) {
             previousVisitedSet.set(i);
         }
     }
-    // std::vector<Solution> &previousSolutions = solutions;
 
     for (int hopNum = 1; hopNum < nHops; hopNum++) {
         int startIndex = 0;
