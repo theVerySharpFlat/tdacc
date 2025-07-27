@@ -1,6 +1,8 @@
-#include "tdb.h"
+#include "tdb-grb.h"
+#include "GraphBLAS.h"
 #include <cstdio>
 #include <sqlite3.h>
+#include <vector>
 
 #define SYSTEM_VECTOR_BLOCK_SIZE 8192
 #define STATION_VECTOR_BLOCK_SIZE SYSTEM_VECTOR_BLOCK_SIZE * 16
@@ -78,6 +80,8 @@ int TDB::loadMarketInfo(MarketInfo *info) {
     }
 
     info->systems.reserve(SYSTEM_VECTOR_BLOCK_SIZE);
+    info->stations.reserve(STATION_VECTOR_BLOCK_SIZE);
+    info->listings.reserve(LISTING_VECTOR_BLOCK_SIZE);
 
     while (true) {
         int ret = sqlite3_step(stmt);
@@ -201,24 +205,27 @@ int TDB::loadMarketInfo(MarketInfo *info) {
     return 0;
 }
 
-std::vector<Item> TDB::loadItemTypes() {
-    std::vector<Item> items;
+GrB_Vector TDB::loadItemTypes() {
+    std::vector<GrB_Index> items;
+    std::vector<int32_t> indices;
 
-    const char *querySQL = "select item_id from Item order by item_id;";
+    const char *querySQL = "select item_id from Item;";
     sqlite3_stmt *stmt;
     if (sqlite3_prepare_v2(conn, querySQL, -1, &stmt, NULL) != SQLITE_OK) {
         fprintf(stderr, "failed to compile loadItemTypes() query: %s\n",
                 sqlite3_errmsg(conn));
-        return std::vector<Item>();
+        return GrB_NULL;
     }
 
+    GrB_Vector vec;
+
     int err;
+    int index = 0;
     do {
         err = sqlite3_step(stmt);
         if (err == SQLITE_ROW) {
-            items.push_back(Item{
-                .itemID = sqlite3_column_int64(stmt, 1),
-            });
+            items.push_back(sqlite3_column_int64(stmt, 1));
+            indices.push_back(index++);
         }
     } while (err == SQLITE_ROW);
 
@@ -226,9 +233,12 @@ std::vector<Item> TDB::loadItemTypes() {
         fprintf(stderr, "TDB::loadItemTypes sqlite3 error: %s\n",
                 sqlite3_errmsg(conn));
         sqlite3_finalize(stmt);
-        return std::vector<Item>();
+        return GrB_NULL;
     }
 
+    GrB_Vector_new(&vec, GrB_INT32, items.back());
+    GrB_Vector_build_INT32(vec, items.data(), indices.data(), index, GrB_NULL);
+
     sqlite3_finalize(stmt);
-    return items;
+    return vec;
 }

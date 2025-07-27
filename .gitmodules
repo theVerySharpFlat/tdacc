@@ -1,0 +1,3 @@
+[submodule "graphblas"]
+	path = graphblas
+	url = git@github.com:DrTimothyAldenDavis/GraphBLAS.git
