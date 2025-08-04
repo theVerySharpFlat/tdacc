@@ -1,6 +1,7 @@
 #include "GraphBLAS.h"
 #include "tdb-grb.h"
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -30,6 +31,76 @@ struct Problem {
     GrB_Index startSystem;
     GrB_Index endSystem;
     GrB_Index solutionOffset;
+};
+
+void printVector(const std::vector<std::pair<long, long>> &arr, int32_t len) {
+    using namespace std;
+    for (int i = 0; i < len; i++)
+        cerr << " " << arr[i].first;
+
+    cerr << endl;
+}
+
+int64_t cpu_computeMaxProfitWithStationIndices(int64_t srcStationIndex,
+                                               int64_t dstStationIndex,
+                                               const MarketInfo &marketInfo,
+                                               int64_t space) {
+    int64_t total = 0;
+    int64_t profit = 0;
+
+    thread_local std::vector<std::pair<int64_t, int64_t>> pq(1024);
+    int profitsIndex = 0;
+    for (int64_t i = 0, j = 0;
+         i < marketInfo.stations[srcStationIndex].nListings &&
+         j < marketInfo.stations[dstStationIndex].nListings;) {
+
+        const ItemPricing &srcPricing =
+            marketInfo.listings
+                [marketInfo.stations[srcStationIndex].listingStartIndex + i];
+        const ItemPricing &dstPricing =
+            marketInfo.listings
+                [marketInfo.stations[dstStationIndex].listingStartIndex + j];
+
+        if (srcPricing.itemID == dstPricing.itemID) {
+            int64_t profitPer = dstPricing.demandPrice - srcPricing.supplyPrice;
+            if (profitPer > 0) {
+                pq[profitsIndex].first = profitPer;
+                pq[profitsIndex].second = srcPricing.supplyQuantity;
+                profitsIndex++;
+            }
+
+            i++;
+            j++;
+        } else if (srcPricing.itemID < dstPricing.itemID) {
+            i++;
+        } else {
+            j++;
+        }
+    }
+
+    for (int i = 0; i < profitsIndex && total < space; i++) {
+        bool swapped = false;
+        for (int j = 0; j < profitsIndex - i - 1; j++) {
+            if (pq[j].first > pq[j + 1].first) {
+                std::swap(pq[j], pq[j + 1]);
+
+                swapped = true;
+            }
+        }
+
+        auto [profitPer, nAvailable] = pq[profitsIndex - i - 1];
+
+        nAvailable = std::min(nAvailable, space - total);
+
+        total += nAvailable;
+        profit += nAvailable * profitPer;
+
+        if (!swapped) {
+            break;
+        }
+    }
+
+    return profit;
 };
 
 __device__ uint64_t computeMaxProfitWithStationIndices(
@@ -80,11 +151,8 @@ __device__ uint64_t computeMaxProfitWithStationIndices(
             if (pq[j].first > pq[j + 1].first) {
                 auto temp = pq[j];
                 pq[j] = pq[j + 1];
-                pq[j + 1] = pq[j];
+                pq[j + 1] = temp;
                 swapped = true;
-            }
-            if (!swapped) {
-                break;
             }
         }
 
@@ -94,6 +162,10 @@ __device__ uint64_t computeMaxProfitWithStationIndices(
 
         total += nAvailable;
         profit += nAvailable * profitPer;
+
+        if (!swapped) {
+            break;
+        }
     }
 
     return profit;
@@ -172,12 +244,51 @@ inline uint64_t computeProblemSolutionCount(const MarketInfo &marketInfo,
 
 __global__ void kernel(Problem *problems, MarketInfoGPU gpuData,
                        uint64_t *gpuSolutionVals, uint64_t *gpuSolutionSrcs,
-                       uint64_t *gpuSolutionDsts) {
+                       uint64_t *gpuSolutionDsts, uint64_t nProblems) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (i >= nProblems) {
+        return;
+    }
 
     traverse(gpuData, problems[i].startSystem, problems[i].endSystem,
              problems[i].solutionOffset, 712, gpuSolutionVals, gpuSolutionSrcs,
              gpuSolutionDsts);
+}
+
+typedef struct {
+    int64_t k;
+    uint64_t v;
+} tuple_u64;
+#define U64_K "typedef struct { int64_t k ; uint64_t v ; } tuple_u64 ;"
+void make_tuple_u64(void *z, const void *x, GrB_Index ix, GrB_Index jx,
+                    const void *y, GrB_Index iy, GrB_Index jy,
+                    const void *theta) {
+    fprintf(stdout, "considering (%zu, %zu) -> %zu, (%zu, %zu) -> %zu\n", ix,
+            jx, *(uint64_t *)x, iy, jy, *(uint64_t *)y);
+    ((tuple_u64 *)z)->k = (int64_t)jx;
+    ((tuple_u64 *)z)->v = ((tuple_u64 *)x)->v + *(uint64_t *)y;
+}
+
+// #define TUPLE_U64_MAX
+void max_tuple_u64(void *in_z, const void *in_x, const void *in_y) {
+    tuple_u64 *z = (tuple_u64 *)in_z;
+    tuple_u64 *x = (tuple_u64 *)in_x;
+    tuple_u64 *y = (tuple_u64 *)in_y;
+
+    if (x->v > y->v || (x->v == y->v && x->k < y->k)) {
+        z->k = x->k;
+        z->v = x->v;
+    } else {
+        z->k = y->k;
+        z->v = y->v;
+    }
+}
+
+void tupleZeros(void *z, const void *x, GrB_Index i, GrB_Index j,
+                const void *y) {
+    ((tuple_u64 *)z)->k = i;
+    ((tuple_u64 *)z)->v = 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -230,6 +341,13 @@ int main(int argc, char *argv[]) {
                     rows.push_back(j);
                     cols.push_back(i);
                     vals.push_back(1);
+
+                    // if ((marketInfo.systems[i].id == 3107576615642 ||
+                    //      marketInfo.systems[j].id == 3107576615642) &&
+                    //     ((marketInfo.systems[i].id == 1733119972058 ||
+                    //       marketInfo.systems[j].id == 1733119972058))) {
+                    //     fprintf(stderr, "bad!\n");
+                    // }
                 }
             }
         }
@@ -336,13 +454,13 @@ int main(int argc, char *argv[]) {
     GrB_Matrix c;
     GrB_Matrix_dup(&c, galaxyGraph);
 
-    for (int i = 0; i < nHops; i++) {
+    for (int i = 0; i < nJumps - 1; i++) {
         GrB_Info info = GrB_mxm(b, GrB_NULL, GrB_NULL,
                                 GrB_LOR_LAND_SEMIRING_BOOL, a, c, GrB_NULL);
         fprintf(stderr, "info: %d\n", info);
 
-        GrB_Matrix_eWiseAdd_BinaryOp(galaxyGraph, GrB_NULL, GrB_NULL, GrB_LOR,
-                                     galaxyGraph, b, GrB_NULL);
+        GrB_Matrix_eWiseAdd_BinaryOp(galaxyGraph, GrB_NULL, GrB_SECOND_BOOL,
+                                     GrB_LOR, galaxyGraph, b, GrB_NULL);
 
         std::swap(a, b);
         GrB_Matrix_clear(b);
@@ -367,7 +485,7 @@ int main(int argc, char *argv[]) {
         // move to the next entry in A
         info = GxB_Matrix_Iterator_next(iterator);
     }
-    GxB_Iterator_free(&iterator);
+    // GxB_Iterator_free(&iterator);
 
     fprintf(stderr, "nproblems: %d\n", hostProblems.size());
 
@@ -432,8 +550,11 @@ int main(int argc, char *argv[]) {
     err = cudaMalloc(&gpuSolutionSrcs, solutionCount * sizeof(uint64_t));
     err = cudaMalloc(&gpuSolutionDsts, solutionCount * sizeof(uint64_t));
 
-    kernel<<<hostProblems.size() / 128, 128>>>(
-        problems, gpuData, gpuSolutionVals, gpuSolutionSrcs, gpuSolutionDsts);
+    fprintf(stderr, "running cuda...\n");
+    kernel<<<hostProblems.size() / 128 + 1, 128>>>(
+        problems, gpuData, gpuSolutionVals, gpuSolutionSrcs, gpuSolutionDsts,
+        hostProblems.size());
+    fprintf(stderr, "cuda done\n");
     err = cudaGetLastError();
     fprintf(stderr, "info: %d\n", err);
 
@@ -471,10 +592,233 @@ int main(int argc, char *argv[]) {
     GrB_Info grbErr = GrB_Matrix_build_UINT64(
         solutionMat, (GrB_Index *)solutionSrcs, (GrB_Index *)solutionDsts,
         (GrB_Index *)solutionVals, solutionCount, GrB_SECOND_UINT64);
+    grbErr = GrB_Matrix_select_UINT64(solutionMat, GrB_NULL, GrB_NULL,
+                                      GrB_VALUENE_UINT64, solutionMat, 0,
+                                      GrB_DESC_R);
     fprintf(stderr, "extractTuples error: %d\n", grbErr);
 
+    // GxB_Matrix_fprint(solutionMat, "solutionmat", GxB_COMPLETE, stdout);
+
+    std::vector<uint64_t> solStationIndices;
+    std::vector<uint64_t> solStationVals;
+    for (uint64_t i = marketInfo.systems[solIndex].stationStartIndex;
+         i < marketInfo.systems[solIndex].stationStartIndex +
+                 marketInfo.systems[solIndex].nStations;
+         i++) {
+        solStationIndices.push_back(i);
+        solStationVals.push_back(1);
+    }
+
+    GrB_Type Tuple;
+    GxB_Type_new(&Tuple, sizeof(tuple_u64), "tuple_u64", U64_K);
+    GxB_IndexBinaryOp Iop;
+    GrB_BinaryOp Bop, MonOp;
+    GrB_Scalar scalar;
+    GrB_Scalar_new(&scalar, GrB_UINT64);
+    GrB_Scalar_setElement_UINT64(scalar, 0);
+
+    assert(GxB_IndexBinaryOp_new(&Iop, make_tuple_u64, Tuple, Tuple, GrB_UINT64,
+                                 GrB_UINT64, "make_u64",
+                                 GrB_NULL) == GrB_SUCCESS);
+
+    assert(GxB_BinaryOp_new_IndexOp(&Bop, Iop, scalar) == GrB_SUCCESS);
+    assert(GxB_BinaryOp_new(&MonOp, max_tuple_u64, Tuple, Tuple, Tuple,
+                            GrB_NULL, GrB_NULL) == GrB_SUCCESS);
+    GrB_Monoid Monoid;
+    GrB_Semiring Semiring;
+
+    tuple_u64 identity;
+    identity.k = INT64_MAX;
+    identity.v = 0;
+
+    assert(GrB_Monoid_new_UDT(&Monoid, MonOp, &identity) == GrB_SUCCESS);
+    assert(GrB_Semiring_new(&Semiring, Monoid, Bop) == GrB_SUCCESS);
+
+    GrB_Vector positionVector;
+    assert(GrB_Vector_new(&positionVector, GrB_UINT64,
+                          marketInfo.stations.size()) == GrB_SUCCESS);
+    assert(GrB_Vector_build_UINT64(
+               positionVector, (GrB_Index *)solStationIndices.data(),
+               (GrB_Index *)solStationVals.data(), solStationIndices.size(),
+               GrB_NULL) == GrB_SUCCESS);
+
+    GrB_Vector netProfitVector;
+    GrB_Vector_new(&netProfitVector, Tuple, marketInfo.stations.size());
+
+    GrB_Vector profitVector;
+    GrB_Vector_new(&profitVector, Tuple, marketInfo.stations.size());
+
     GxB_Matrix_fprint(solutionMat, "solutionmat", GxB_SUMMARY, stdout);
-    // *nvals, const GrB_Matrix A)
+    GxB_Vector_fprint(positionVector, "positionvector", GxB_SUMMARY, stdout);
+    std::vector<GrB_Vector> netProfitVectors;
+
+    GrB_IndexUnaryOp TupleZeros;
+    GrB_IndexUnaryOp_new(&TupleZeros, tupleZeros, Tuple, GrB_UINT64,
+                         GrB_UINT64);
+
+    fprintf(stderr, "ret: %d\n",
+            GrB_Vector_apply_IndexOp_UDT(profitVector, positionVector, GrB_NULL,
+                                         TupleZeros, positionVector, &identity,
+                                         GrB_DESC_R));
+
+    std::vector<GrB_Vector> positionVectors;
+
+    {
+        GrB_Vector dupPositionVec;
+        GrB_Vector_dup(&dupPositionVec, positionVector);
+        positionVectors.push_back(dupPositionVec);
+    }
+
+    for (int i = 0; i < nHops; i++) {
+        fprintf(stderr, "vxm: %d\n",
+                GrB_vxm(profitVector, GrB_NULL, GrB_NULL, Semiring,
+                        profitVector, solutionMat, GrB_DESC_R));
+        GxB_Vector_fprint(profitVector, "profitvector", GxB_COMPLETE, stdout);
+
+        GrB_Vector_apply_BinaryOp2nd_UINT64(positionVector, GrB_NULL, GrB_NULL,
+                                            GrB_SECOND_UINT64, profitVector, 1,
+                                            GrB_DESC_R);
+        {
+            fprintf(stdout, "profit vector pre\n");
+            info = GxB_Vector_Iterator_attach(iterator, profitVector, NULL);
+            info = GxB_Vector_Iterator_seek(iterator, 0);
+            while (info != GxB_EXHAUSTED) {
+                // get the entry A(i,j)
+                GrB_Index i = GxB_Vector_Iterator_getIndex(iterator);
+                // uint64_t val = GxB_Iterator_get_UINT64(iterator);
+                tuple_u64 t;
+                GxB_Iterator_get_UDT(iterator, &t);
+                fprintf(stdout, "(%zu, %zu) -> (%zu, %zu)\n", i, 0UL, t.k, t.v);
+
+                // move to the next entry in A
+                info = GxB_Matrix_Iterator_next(iterator);
+            }
+        }
+        GrB_Vector_eWiseAdd_BinaryOp(netProfitVector, GrB_NULL, GrB_NULL, MonOp,
+                                     netProfitVector, profitVector, GrB_NULL);
+        GxB_Vector_fprint(netProfitVector, "net profit vector", GxB_COMPLETE,
+                          stdout);
+
+        GrB_Vector dupNetVec;
+        GrB_Vector_dup(&dupNetVec, netProfitVector);
+        netProfitVectors.push_back(dupNetVec);
+
+        GrB_Vector dupPositionVec;
+        GrB_Vector_dup(&dupPositionVec, positionVector);
+        positionVectors.push_back(dupPositionVec);
+    }
+
+    for (int i = 0; i < nHops - 1; i++) {
+        GrB_Vector profitVector;
+        GrB_Vector_new(&profitVector, GrB_UINT64, marketInfo.stations.size());
+    }
+
+    tuple_u64 maxProfit = {};
+    GrB_Vector_reduce_UDT(&maxProfit, GrB_NULL, Monoid, netProfitVector,
+                          GrB_NULL);
+
+    fprintf(stderr, "NET PROFIT: %zu, %zu\n", maxProfit.k, maxProfit.v);
+
+    info = GxB_Vector_Iterator_attach(iterator, netProfitVector, NULL);
+    info = GxB_Vector_Iterator_seek(iterator, 0);
+    int64_t nextIndex = 0;
+    while (info != GxB_EXHAUSTED) {
+        // get the entry A(i,j)
+        GrB_Index i = GxB_Vector_Iterator_getIndex(iterator);
+        tuple_u64 val;
+        GxB_Iterator_get_UDT(iterator, &val);
+        if (val.v == maxProfit.v) {
+            fprintf(stderr, "solution at index %zu\n", i);
+
+            fprintf(stderr, "station index: %zu\n", marketInfo.stations[i].id);
+            fprintf(stderr, "\n");
+
+            nextIndex = val.k;
+            break;
+        }
+
+        // move to the next entry in A
+        info = GxB_Matrix_Iterator_next(iterator);
+    }
+
+    for (int i = nHops - 2; i >= 0; i--) {
+        info = GxB_Vector_Iterator_attach(iterator, netProfitVectors[i], NULL);
+        info = GxB_Vector_Iterator_seek(iterator, 0);
+        while (info != GxB_EXHAUSTED) {
+            // get the entry A(i,j)
+            GrB_Index i = GxB_Vector_Iterator_getIndex(iterator);
+            tuple_u64 val;
+            GxB_Iterator_get_UDT(iterator, &val);
+            if (i == nextIndex) {
+                fprintf(stderr, "from station at index %zu (profit=%zu)\n", i,
+                        val.v);
+
+                fprintf(stderr, "station index: %zu\n",
+                        marketInfo.stations[i].id);
+                fprintf(stderr, "\n");
+
+                nextIndex = val.k;
+                break;
+            }
+
+            // move to the next entry in A
+            info = GxB_Matrix_Iterator_next(iterator);
+        }
+    }
+
+    return 0;
+
+    //
+    // {
+    //     GrB_Vector currentVec;
+    //     GrB_Vector_new(&currentVec, GrB_UINT64, marketInfo.stations.size());
+    //     GrB_Vector_select_UINT64(currentVec, GrB_NULL, GrB_NULL,
+    //                              GrB_VALUEEQ_UINT64, netProfitVector,
+    //                              maxProfit, GrB_DESC_R);
+    //     GxB_Vector_fprint(currentVec, "currentVec", GxB_COMPLETE, stdout);
+    //
+    //     for (int i = nHops - 2; i >= 0; i--) {
+    //         fprintf(stderr, "vxm: %d\n",
+    //                 GrB_vxm(currentVec, netProfitVectors[i], GrB_NULL,
+    //                         GrB_MAX_FIRST_SEMIRING_UINT64, currentVec,
+    //                         solutionMat, GrB_DESC_R));
+    //         uint64_t hopMax;
+    //
+    //         GrB_Vector_select_UINT64(currentVec, currentVec, GrB_NULL,
+    //                                  GrB_VALUENE_UINT64, netProfitVectors[i],
+    //                                  UINT64_MAX, GrB_DESC_R);
+    //         GxB_Vector_fprint(currentVec, "currentVecPre", GxB_COMPLETE,
+    //                           stdout);
+    //         GrB_Vector_reduce_UINT64(&hopMax, GrB_NULL,
+    //         GrB_MAX_MONOID_UINT64,
+    //                                  currentVec, GrB_NULL);
+    //         GrB_Vector_select_UINT64(currentVec, GrB_NULL, GrB_NULL,
+    //                                  GrB_VALUEEQ_UINT64, currentVec, hopMax,
+    //                                  GrB_DESC_R);
+    //
+    //         GxB_Vector_fprint(currentVec, "currentVec", GxB_COMPLETE,
+    //         stdout);
+    //
+    //         info = GxB_Vector_Iterator_attach(iterator, currentVec, NULL);
+    //         info = GxB_Vector_Iterator_seek(iterator, 0);
+    //         while (info != GxB_EXHAUSTED) {
+    //             // get the entry A(i,j)
+    //             GrB_Index i = GxB_Vector_Iterator_getIndex(iterator);
+    //             uint64_t val = GxB_Iterator_get_UINT64(iterator);
+    //             if (val == hopMax) {
+    //                 fprintf(stderr, "from station at index %zu\n", i);
+    //
+    //                 fprintf(stderr, "station id: %zu\n",
+    //                         marketInfo.stations[i].id);
+    //
+    //                 fprintf(stderr, "profit: %zu\n", hopMax);
+    //             }
+    //
+    //             // move to the next entry in A
+    //             info = GxB_Matrix_Iterator_next(iterator);
+    //         }
+    //     }
+    // }
 
     GrB_finalize();
 }
